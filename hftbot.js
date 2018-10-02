@@ -1,5 +1,4 @@
-const key = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlfdG9rZW5faWQiOiJlNTU5ZTRlNi0yYTBiLTRlMzYtOWMyNy0yYTg0MDVjYWMyMjIiLCJzY29wZSI6WyJzY29wZV9leGNoYW5nZV90cmFkZV9yZWFkIiwic2NvcGVfZXhjaGFuZ2VfdHJhZGVfd3JpdGUiLCJzY29wZV9leGNoYW5nZV9sZWRnZXJfcmVhZCIsInNjb3BlX2V4Y2hhbmdlX2NyeXB0b193aXRoZHJhd2FsIiwic2NvcGVfZXhjaGFuZ2VfZnVuZGluZ19yZWFkIiwic2NvcGVfZXhjaGFuZ2VfZnVuZGluZ193cml0ZSIsInNjb3BlX2V4Y2hhbmdlX21hcmdpbl90cmFkZV9yZWFkIiwic2NvcGVfZXhjaGFuZ2VfbWFyZ2luX3RyYWRlX3dyaXRlIiwic2NvcGVfZXhjaGFuZ2Vfd2FsbGV0X3RyYW5zZmVyIl0sInVzZXJfaWQiOiJkNDI2MTUxOC1iMDRjLTRmZmMtOGNlNi01NmQ1OGI3YzJjMjAifQ.Tm_eSyezi8kV5j2KtNI6yB-jm2ElHhvn8MOngt08BdM.V2:70f8b0b8cf74ad2064562231edb14c813bee390d079cfdba52fc1ed9a9d48bfe`
-// const key = ''
+const key = require('./secret')
 
 const Client = require('./index')
 let client = new Client({ key: key })
@@ -27,31 +26,31 @@ function setBid(bid){
   // console.log('bid', price, type, size)
   if(parseFloat(price) > parseFloat(highestBid.price) && type == 'add'){
     highestBid = {price, size}
-    console.log('HIGHT BID', highestBid)
+    console.log('HIGHTEST BID', highestBid)
   }
   if(type == 'remove' && price == highestBid.price){
     highestBid = {price: 0, size: 0}
   }
 
-  // if(type=='add' && parseFloat(price) >= parseFloat(myOrderPair.ask.price))
-  //   mockCompleteOrder({ask: bid})
+  if(type=='add' && parseFloat(price) >= parseFloat(myOrderPair.ask.price) && myOrderPair.ask.state == 'open')
+    mockCompleteOrder({ask: bid})
 }
 
 function setAsk(ask){
   let [price, type, size] = ask
   price = parseFloat(price).toFixed(2)
   type = type == 1 ? 'add' : 'remove'
-  // console.log('ask', price, type, size)
+  // console.log('ask', price, parseFloat(price) , parseFloat(lowestAsk.price))
   if(parseFloat(price) < parseFloat(lowestAsk.price) && type == 'add'){
     lowestAsk = {price, size}
     console.log('LOWEST ASK', lowestAsk)
   }
   if(type == 'remove' && price == lowestAsk.price){
-    lowestAsk = {price: 0, size: 0}
+    lowestAsk = {price: 100000, size: 0}
   }
 
-  // if(type=='add' && parseFloat(price) <= parseFloat(myOrderPair.bid.price))
-  //   mockCompleteOrder({bid: ask})
+  if(type=='add' && parseFloat(price) <= parseFloat(myOrderPair.bid.price) && myOrderPair.bid.state == 'open')
+    mockCompleteOrder({bid: ask})
 }
 
 function getOrderbookWS() {
@@ -77,7 +76,7 @@ function getOrderbookWS() {
 function getOrderWS() {
   client.subscribeOrder((order) => {
     const {price, size, state, side} = order.update
-    myOrderPair[side]={price, size, state}
+    myOrderPair[side]={price: price.toFixed(2), size: size.toString(), state}
     console.log('update myOrderPair', myOrderPair)
   })
   .then(()=>{
@@ -108,23 +107,28 @@ function createOrder() {
 
   // client.placeLimitOrder(PAIR, 'bid', bidOrder.price, bidOrder.size, 'exchange')
   // client.placeLimitOrder(PAIR, 'ask', askOrder.price, askOrder.size, 'exchange')
+  console.log('\n')
   console.log(PAIR, 'bid', bidOrder.price, bidOrder.size, 'exchange')
+  myOrderPair[bidOrder.side]={price: bidOrder.price, size: bidOrder.size, state: 'open'}
   console.log(PAIR, 'ask', askOrder.price, askOrder.size, 'exchange')
+  myOrderPair[askOrder.side]={price: askOrder.price, size: askOrder.size, state: 'open'}
+  console.log('\n')
+
 }
 
-// function mockCompleteOrder({bid, ask}) {
-//   if(bid){
-//     myOrderPair.bid.state='filled'
-//     console.log(`BOUGHT at ${myOrderPair.bid.price}`)
-//   }
-//   if(ask){
-//     myOrderPair.ask.state='filled'
-//     console.log(`SELL at ${myOrderPair.ask.price}`)
-//   }
-//   if(myOrderPair.bid.state == myOrderPair.ask.state){
-//     console.log(`\nEARN: ${parseFloat(myOrderPair.ask.price) - parseFloat(myOrderPair.bid.price) * ORDER_SIZE}`)
-//   }
-// }
+function mockCompleteOrder({bid, ask}) {
+  if(bid){
+    myOrderPair.bid.state='filled'
+    console.log(`BOUGHT at ${myOrderPair.bid.price}`)
+  }
+  if(ask){
+    myOrderPair.ask.state='filled'
+    console.log(`SELL at ${myOrderPair.ask.price}`)
+  }
+  if(myOrderPair.bid.state == myOrderPair.ask.state){
+    console.log(`\nEARN: ${parseFloat(myOrderPair.ask.price) - parseFloat(myOrderPair.bid.price) * ORDER_SIZE}`)
+  }
+}
 
 /*
 就是我刚开始编写机器人的源代码，几乎没有改动，参数也是原来的参数。这个版本的程序有许多
