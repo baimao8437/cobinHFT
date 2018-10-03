@@ -20,6 +20,7 @@ let myOrderPair = {
     state: 'filled',
   }
 }
+let tradeLocked = false
 
 function setBid(bid){
   const {price, sizeDiff} = bid
@@ -65,14 +66,16 @@ function setAsk(ask){
 
 function getOrderbookWS() {
   client.subscribeOrderbook(PAIR, '1E-2', (msg) => {
-    if(msg.update){
+    if(msg.update && ! tradeLocked){
       const { bids, asks } = msg.update
       if(!!bids[0]) setBid(bids[0]);
       if(!!asks[0]) setAsk(asks[0]);
 
       if(myOrderPair.bid.state=='filled' && myOrderPair.ask.state=='filled' &&
-        !highestBid.price.eq(0) && !lowestAsk.price.eq(100000) && lastTrade.price)
-        createOrder()
+        !highestBid.price.eq(0) && !lowestAsk.price.eq(100000) && lastTrade.price && !tradeLocked){
+          tradeLocked = true
+          createOrder()
+        }
     }
   })
   .then(() => {
@@ -81,15 +84,20 @@ function getOrderbookWS() {
   .catch((err) => {
     console.error(err)
     client.close()
+    process.exit();
   })
 }
 
 function getTradeWS() {
   client.subscribePublicTrade(PAIR, (msg) => {
-    if(msg.update){
+    if(msg.update && !tradeLocked){
       const{ price, size } = msg.update[0]
       lastTrade = {price, size}
       console.log(`\nTRADE OCCER at ${price.toString()} for ${size.toString()}\nbid: ${highestBid.price.toString()}, ask: ${lowestAsk.price.toString()}\n`);
+      if(myOrderPair.bid.state=='filled' && myOrderPair.ask.state=='filled' && !tradeLocked){
+          tradeLocked = true
+          createOrder()
+        }
     }
   })
   .then(() => {
@@ -98,17 +106,20 @@ function getTradeWS() {
   .catch((err) => {
     console.log(err)
     client.close()
+    process.exit();
   })
 }
 
 
 function getOrderWS() {
   client.subscribeOrder((order) => {
-    console.log(order);
     if(order.update){
       const {price, size, state, side} = order.update
       myOrderPair[side]={price: price, size, state}
-      console.log('update myOrderPair', myOrderPair)
+      console.log('update myOrderPair:', side, myOrderPair[side].price.toString(), myOrderPair[side].state);
+      if(myOrderPair.bid.state == 'filled' && myOrderPair.ask.state == 'filled'){
+        tradeLocked = false;
+      }
     }
   })
   .then(()=>{
@@ -116,6 +127,7 @@ function getOrderWS() {
   })
   .catch(()=>{
     client.close();
+    process.exit();
   })
 }
 
@@ -128,7 +140,7 @@ async function createOrder() {
   // let askOrder = {side: 'ask', price: higherPrice.sub(0.01), size: ORDER_SIZE }
 
   let askOrder = {side: 'ask', price: lastTrade.price.add(0.01), size: ORDER_SIZE }
-  let bidOrder = {side: 'bid', price: lastTrade.price.sub(0.01), size: ORDER_SIZE }
+  let bidOrder = {side: 'bid', price: lastTrade.price, size: ORDER_SIZE }
 
   let realAsk = await placeOrder(askOrder.side, askOrder.price, askOrder.size)
   let realBid = await placeOrder(bidOrder.side, bidOrder.price, bidOrder.size)
@@ -140,10 +152,10 @@ async function createOrder() {
   // console.log('ask', askOrder.price.toString(), askOrder.size)
   // myOrderPair[realAsk.side]={price: realAsk.price, size: realAsk.size, state: realAsk.state}
   console.log('\n')
-  process.exit(0)
 }
 
 function placeOrder(side, price, size){
+  console.log('place order: ',side.toString() ,price.toString())
   return client.placeLimitOrder(PAIR, side, price, size, 'exchange')
 }
 
@@ -165,7 +177,7 @@ function mockCompleteOrder({bid, ask}) {
 client.on('open', ()=>{
   console.error('open')
   getOrderWS()
-  getOrderbookWS()
+  // getOrderbookWS()
   getTradeWS()
 })
 
