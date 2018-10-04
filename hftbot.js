@@ -94,7 +94,7 @@ function getTradeWS() {
       const{ price, size } = msg.update[0]
       lastTrade = {price, size}
       console.log(`\nTRADE OCCER at ${price.toString()} for ${size.toString()}\nbid: ${highestBid.price.toString()}, ask: ${lowestAsk.price.toString()}\n`);
-      if(myOrderPair.bid.state=='filled' && myOrderPair.ask.state=='filled' && !tradeLocked){
+      if(myOrderPair.bid.state=='filled' && myOrderPair.ask.state=='filled' && !tradeLocked && !highestBid.price.eq(0) && !lowestAsk.price.eq(100000)){
           tradeLocked = true
           createOrder()
         }
@@ -126,21 +126,22 @@ function getOrderWS() {
     console.log('subscribe order')
   })
   .catch(()=>{
+    console.log(err)
     client.close();
     process.exit();
   })
 }
 
 async function createOrder() {
-  // let dBid = lastTrade.price.sub(highestBid.price)
-  // let dAsk = lowestAsk.price.sub(lastTrade.price)
-  // let nearPrice = dBid.lt(dAsk) ? highestBid.price : lowestAsk.price
-  // let [higherPrice, lowerPrice] = lastTrade.price.gt(nearPrice) ? [lastTrade.price, nearPrice] : [nearPrice, lastTrade.price]
-  // let bidOrder = {side: 'bid', price: lowerPrice.add(0.01), size: ORDER_SIZE }
-  // let askOrder = {side: 'ask', price: higherPrice.sub(0.01), size: ORDER_SIZE }
+  let dBid = lastTrade.price.sub(highestBid.price)
+  let dAsk = lowestAsk.price.sub(lastTrade.price)
+  let nearPrice = dBid.lt(dAsk) ? highestBid.price : lowestAsk.price
+  let [higherPrice, lowerPrice] = lastTrade.price.gt(nearPrice) ? [lastTrade.price, (nearPrice.add(lastTrade.price)).div(2)] : [(nearPrice.add(lastTrade.price)).div(2), lastTrade.price]
+  let bidOrder = {side: 'bid', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? lowerPrice.sub(0.02) : lowerPrice.add(0.01), size: ORDER_SIZE }
+  let askOrder = {side: 'ask', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? higherPrice.sub(0.01) : higherPrice.sub(0.01), size: ORDER_SIZE }
 
-  let askOrder = {side: 'ask', price: lastTrade.price.add(0.01), size: ORDER_SIZE }
-  let bidOrder = {side: 'bid', price: lastTrade.price, size: ORDER_SIZE }
+  // let askOrder = {side: 'ask', price: lastTrade.price.add(0.01), size: ORDER_SIZE }
+  // let bidOrder = {side: 'bid', price: lastTrade.price.sub(0.01), size: ORDER_SIZE }
 
   let realAsk = await placeOrder(askOrder.side, askOrder.price, askOrder.size)
   let realBid = await placeOrder(bidOrder.side, bidOrder.price, bidOrder.size)
@@ -177,7 +178,7 @@ function mockCompleteOrder({bid, ask}) {
 client.on('open', ()=>{
   console.error('open')
   getOrderWS()
-  // getOrderbookWS()
+  getOrderbookWS()
   getTradeWS()
 })
 
