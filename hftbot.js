@@ -21,21 +21,25 @@ let myOrderPair = {
   }
 }
 let tradeLocked = false
+let bidOrAsk = [] // ask = 1 bid = 0
 
 function setBid(bid){
   const {price, sizeDiff} = bid
   // console.log(price.toString(), sizeDiff.toString())
   if(price.gt(highestBid.price) && sizeDiff.isPos()){
     highestBid = {price, size: sizeDiff}
+    bidOrAsk.unshift(0)
+    if(bidOrAsk.length===50) bidOrAsk.pop()
     console.log(`HIGHEST BID: ${highestBid.price.toString()} ${highestBid.size.toString()}`)
   }
   else if(price.eq(highestBid.price)){
-    if(sizeDiff.isPos())
-      highestBid = {price, size: highestBid.size.add(sizeDiff)}
-    else
-      highestBid = {price, size: highestBid.size.add(sizeDiff)}
-    if(!highestBid.size.gt(0))
+    highestBid = {price, size: highestBid.size.add(sizeDiff)}
+    if(!highestBid.size.gt(0)){
       highestBid = {price: new Decimal(0), size: new Decimal(0)}
+    } else {
+      bidOrAsk.unshift(0)
+      if(bidOrAsk.length===50) bidOrAsk.pop()
+    }
     console.log(`HIGHEST BID: ${highestBid.price.toString()} ${highestBid.size.toString()}`)
   }
 
@@ -48,15 +52,18 @@ function setAsk(ask){
   // console.log(price.toString(), sizeDiff.toString(), sizeDiff.isPos())
   if(price.lt(lowestAsk.price) && sizeDiff.isPos()){
     lowestAsk = {price, size: sizeDiff}
+    bidOrAsk.unshift(1)
+    if(bidOrAsk.length===50) bidOrAsk.pop()
     console.log(`LOWEST ASK: ${lowestAsk.price.toString()} ${lowestAsk.size.toString()}`)
   }
   else if(price.eq(lowestAsk.price)){
-    if(sizeDiff.isPos())
-      lowestAsk = {price, size: lowestAsk.size.add(sizeDiff)}
-    else
-      lowestAsk = {price, size: lowestAsk.size.add(sizeDiff)}
-    if(!lowestAsk.size.gt(0))
+    lowestAsk = {price, size: lowestAsk.size.add(sizeDiff)}
+    if(!lowestAsk.size.gt(0)){
       lowestAsk = {price: new Decimal(100000), size: new Decimal(0)}
+    } else {
+      bidOrAsk.unshift(1)
+      if(bidOrAsk.length===50) bidOrAsk.pop()
+    }
     console.log(`LOWEST ASK: ${lowestAsk.price.toString()} ${lowestAsk.size.toString()}`)
   }
 
@@ -94,10 +101,6 @@ function getTradeWS() {
       const{ price, size } = msg.update[0]
       lastTrade = {price, size}
       console.log(`\nTRADE OCCER at ${price.toString()} for ${size.toString()}\nbid: ${highestBid.price.toString()}, ask: ${lowestAsk.price.toString()}\n`);
-      if(myOrderPair.bid.state=='filled' && myOrderPair.ask.state=='filled' && !tradeLocked && !highestBid.price.eq(0) && !lowestAsk.price.eq(100000)){
-          tradeLocked = true
-          createOrder()
-        }
     }
   })
   .then(() => {
@@ -133,12 +136,20 @@ function getOrderWS() {
 }
 
 async function createOrder() {
-  let dBid = lastTrade.price.sub(highestBid.price)
-  let dAsk = lowestAsk.price.sub(lastTrade.price)
-  let nearPrice = dBid.lt(dAsk) ? highestBid.price : lowestAsk.price
-  let [higherPrice, lowerPrice] = lastTrade.price.gt(nearPrice) ? [lastTrade.price, (nearPrice.add(lastTrade.price)).div(2)] : [(nearPrice.add(lastTrade.price)).div(2), lastTrade.price]
-  let bidOrder = {side: 'bid', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? lowerPrice.sub(0.02) : lowerPrice.add(0.01), size: ORDER_SIZE }
-  let askOrder = {side: 'ask', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? higherPrice.sub(0.01) : higherPrice.sub(0.01), size: ORDER_SIZE }
+  let momentent = bidOrAsk.reduce((a, b)=> a + b) > 25 ? 'ask' : 'bid'
+  console.log('bid or ask: ', momentent)
+  let higherPrice = momentent == 'ask' ?  lastTrade.price.sub(0.01) : (lastTrade.price.add(lowestAsk.price)).div(2)
+  let lowerPrice = momentent == 'ask' ? (lastTrade.price.add(highestBid.price)).div(2) : lastTrade.price.add(0.01)
+  let askOrder = {side: 'ask', price: higherPrice, size: ORDER_SIZE}
+  let bidOrder = {side: 'bid', price: lowerPrice, size: ORDER_SIZE}
+  lastTrade = {price: null, size: null}
+
+  // let dBid = lastTrade.price.sub(highestBid.price)
+  // let dAsk = lowestAsk.price.sub(lastTrade.price)
+  // let nearPrice = dBid.lt(dAsk) ? highestBid.price : lowestAsk.price
+  // let [higherPrice, lowerPrice] = lastTrade.price.gt(nearPrice) ? [lastTrade.price, (nearPrice.add(lastTrade.price)).div(2)] : [(nearPrice.add(lastTrade.price)).div(2), lastTrade.price]
+  // let bidOrder = {side: 'bid', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? lowerPrice.sub(0.02) : lowerPrice.add(0.01), size: ORDER_SIZE }
+  // let askOrder = {side: 'ask', price: higherPrice.toFixed(2) === lowerPrice.toFixed(2) ? higherPrice.sub(0.01) : higherPrice.sub(0.01), size: ORDER_SIZE }
 
   // let askOrder = {side: 'ask', price: lastTrade.price.add(0.01), size: ORDER_SIZE }
   // let bidOrder = {side: 'bid', price: lastTrade.price.sub(0.01), size: ORDER_SIZE }
@@ -148,15 +159,14 @@ async function createOrder() {
   console.log('\nPLACE ORDER')
   console.log(`ask: ${realAsk.price.toString()} ${realAsk.size.toString()} ${realAsk.state}`)
   console.log(`bid: ${realBid.price.toString()} ${realBid.size.toString()} ${realBid.state}`)
-  // console.log('bid', bidOrder.price.toString(), bidOrder.size)
-  // myOrderPair[realBid.side]={price: realBid.price, size: realBid.size, state: realBid.state}
   // console.log('ask', askOrder.price.toString(), askOrder.size)
   // myOrderPair[realAsk.side]={price: realAsk.price, size: realAsk.size, state: realAsk.state}
+  // console.log('bid', bidOrder.price.toString(), bidOrder.size)
+  // myOrderPair[realBid.side]={price: realBid.price, size: realBid.size, state: realBid.state}
   console.log('\n')
 }
 
 function placeOrder(side, price, size){
-  console.log('place order: ',side.toString() ,price.toString())
   return client.placeLimitOrder(PAIR, side, price, size, 'exchange')
 }
 
@@ -181,71 +191,3 @@ client.on('open', ()=>{
   getOrderbookWS()
   getTradeWS()
 })
-
-/*
-就是我刚开始编写机器人的源代码，几乎没有改动，参数也是原来的参数。这个版本的程序有许多
-需要改进的地方，但即使如此，它也当时表现除了惊人的盈利能力，在我本金不多时，不加杠杆平
-均每天盈利在5%左右。当然无论从哪一方面，它都不适应今天的市场。
-我同时也发了一篇文章在社区，大家可以看看。
-by 小草
-*/
-
-//稍微改了一下，用了平台的容错函数_C(),和精度函数_N().
-//取消全部订单
-/*
-//计算将要下单的价格
-function GetPrice(Type,depth) {
-  var amountBids=0;
-  var amountAsks=0;
-  //计算买价，获取累计深度达到预设的价格
-  if(Type=="Buy"){
-     for(var i=0;i<20;i++){
-         amountBids+=depth.Bids[i].Amount;
-         //floatamountbuy就是预设的累计买单深度
-         if (amountBids>floatamountbuy){
-             //稍微加0.01，使得订单排在前面
-            return depth.Bids[i].Price+0.01;}
-      }
-  }
-  //同理计算卖价
-  if(Type=="Sell"){
-     for(var j=0; j<20; j++){
-       amountAsks+=depth.Asks[j].Amount;
-          if (amountAsks>floatamountsell){
-          return depth.Asks[j].Price-0.01;}
-      }
-  }
-  //遍历了全部深度仍未满足需求，就返回一个价格，以免出现bug
-  return depth.Asks[0].Price
-}
-
-function onTick() {
-  var depth=_C(exchange.GetDepth);
-  var buyPrice = GetPrice("Buy",depth);
-  var sellPrice= GetPrice("Sell",depth);
-  //买卖价差如果小于预设值diffprice，就会挂一个相对更深的价格
-  if ((sellPrice - buyPrice) <= diffprice){
-          buyPrice-=10;
-          sellPrice+=10;}
-  //把原有的单子全部撤销，实际上经常出现新的价格和已挂单价格相同的情况，此时不需要撤销
-  CancelPendingOrders()
-  //获取账户信息，确定目前账户存在多少钱和多少币
-  var account=_C(exchange.GetAccount);
-  //可买的比特币量
-  var amountBuy = _N((account.Balance / buyPrice-0.1),2);
-  //可卖的比特币量，注意到没有仓位的限制，有多少就买卖多少，因为我当时的钱很少
-  var amountSell = _N((account.Stocks),2);
-  if (amountSell > 0.02) {
-      exchange.Sell(sellPrice,amountSell);}
-  if (amountBuy > 0.02) {
-      exchange.Buy(buyPrice, amountBuy);}
-  //休眠，进入下一轮循环
-  Sleep(sleeptime);
-}
-
-function main() {
-  while (true) {
-      onTick();
-  }
-}
-*/
